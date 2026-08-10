@@ -1,8 +1,9 @@
 import time
 import requests
+from datetime import datetime
 
 # ==========================================
-# تطبيق Nori Signals - صفقة 1 دقيقة (FastForex API)
+# تطبيق Nori Signals - النسخة النهائية المضبوطة بدقة
 # ==========================================
 TELEGRAM_BOT_TOKEN = "8792506572:AAHH3hVOz895ca4W7-HaZ6bms1J_8kiFtXA"
 TELEGRAM_CHAT_ID = "1792638515"
@@ -11,16 +12,16 @@ FASTFOREX_API_KEY = "3e4659f78c-2f97fec538-tjj1bw"
 
 initial_balance = 1000.0
 account_balance = initial_balance
-BASE_PERCENT = 1.0        
-current_percent = BASE_PERCENT
+FIXED_PERCENT = 1.0        # نسبة ثابتة 1% بدون مضاعفات
 
 target_profit_pct = 10.0   
 stop_loss_pct = 6.0        
 session_profit = 0.0
 
+# الأسواق الأساسية فقط
 SYMBOLS = [
-    "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD",
-    "EUR/JPY", "EUR/GBP", "AUD/CHF", "AUD/JPY", "CAD/JPY"
+    "EUR/USD", "GBP/USD", "USD/JPY",
+    "EUR/JPY", "EUR/GBP"
 ]
 
 def send_telegram(msg):
@@ -45,139 +46,159 @@ def get_fastforex_price(symbol):
         print(f"API Error: {e}")
     return None
 
+def is_allowed_trading_time():
+    """فترات العمل: 9-11 صباحاً ومن 16-18 مساءً"""
+    now = datetime.now()
+    current_hour = now.hour
+    
+    morning_session = (9 <= current_hour < 11)
+    evening_session = (16 <= current_hour < 18)
+    
+    return morning_session or evening_session
+
 def nori_strategy_loop():
-    global current_percent, account_balance, session_profit
+    global account_balance, session_profit
     
     send_telegram(
-        "🚀 *تم تشغيل Nori Signals (الإشارة قبل افتتاح الشمعة بـ 30 ثانية)*\n"
-        "📊 البوت يرسل الإشارة قبل بداية الشمعة الجديدة بـ 30 ثانية...\n"
-        "🎯 الهدف: 10% | 🛑 الوقف: 6%"
+        "🚀 *تم تشغيل بوت Nori Signals (نسخة النتائج المضبوطة)*\n"
+        "⏰ أوقات العمل: 09:00 - 11:00 ومن 16:00 - 18:00\n"
+        "🎯 الهدف: 10% | 🛑 الوقف: 6% | 💵 نسبة ثابتة: 1%"
     )
     
-    last_prices = {}
-    print("--- بدأ البوت في فحص الأسواق (الإشارة قبل 30 ثانية) ---")
+    print("--- بدأ البوت بالعمل وفق الأوقات المحددة والنتائج الدقيقة ---")
+    notified_outside_time = False
 
     while True:
         try:
+            if not is_allowed_trading_time():
+                if not notified_outside_time:
+                    print("[i] خارج أوقات التداول المحددة. البوت في وضع الاستعداد...")
+                    notified_outside_time = True
+                time.sleep(30)
+                continue
+            
+            if notified_outside_time:
+                print("[i] تم دخول وقت التداول المحدد. البوت يعمل الآن...")
+                notified_outside_time = False
+
             target_dollar = initial_balance * (target_profit_pct / 100.0)
             stop_loss_dollar = initial_balance * (stop_loss_pct / 100.0)
 
             if session_profit >= target_dollar:
                 send_telegram(f"🎯 *تم تحقيق هدف الربح (10%)!* (+${session_profit:.2f})")
-                break
+                time.sleep(300)
+                continue
             if session_profit <= -stop_loss_dollar:
                 send_telegram(f"🛑 *تم بلوغ حد الخسارة (6%)!* (-${abs(session_profit):.2f})")
-                break
+                time.sleep(300)
+                continue
 
             current_time = time.localtime()
             current_min = current_time.tm_min
             current_sec = current_time.tm_sec
 
-            # إرسال الإشارة قبل 30 ثانية من افتتاح الشمعة الجديدة (في آخر 30 ثانية من الشمعة الحالية)
-            is_near_end_of_candle = ((current_min + 1) % 5 == 0) and (30 <= current_sec <= 59)
+            # مراقبة بداية شمعة 5 دقائق الجديدة (عند الدقيقة 00, 05, 10...)
+            is_at_candle_start = (current_min % 5 == 0) and (0 <= current_sec <= 5)
 
-            if not is_near_end_of_candle:
+            if not is_at_candle_start:
                 time.sleep(1)
                 continue
 
-            print("\n[*] ===== قبل افتتاح الشمعة بـ 30 ثانية: البحث عن فرصة للشمعة القادمة =====")
+            print("\n[*] ===== بداية شمعة 5 دقائق: رصد الدقيقة الأولى =====")
             
-            selected_signal = None
-
+            # تسجيل السعر عند بداية الدقيقة الأولى
+            symbol_prices_start = {}
             for symbol in SYMBOLS:
-                print(f"[*] جاري فحص السعر للزوج: {symbol}...")
-                price_start = get_fastforex_price(symbol)
+                p = get_fastforex_price(symbol)
+                if p:
+                    symbol_prices_start[symbol] = p
+
+            # انتظار مرور الدقيقة الأولى بالكامل (60 ثانية) لتحديد لونها
+            print("[⏳] جاري انتظار انتهاء الدقيقة الأولى...")
+            start_wait = time.time()
+            while time.time() - start_wait < 62:
+                time.sleep(1)
+
+            selected_signal = None
+            for symbol in SYMBOLS:
+                if symbol not in symbol_prices_start:
+                    continue
                 
-                if not price_start:
+                price_start = symbol_prices_start[symbol]
+                price_end_first_min = get_fastforex_price(symbol)
+                
+                if not price_end_first_min:
                     continue
 
-                print(f"[+] السعر الحالي لـ {symbol} هو: {price_start}")
-
-                if symbol not in last_prices:
-                    last_prices[symbol] = price_start
-                    continue
-
-                prev_price = last_prices[symbol]
-                last_prices[symbol] = price_start  
-
-                price_diff = price_start - prev_price
-                last_digit = int(str(price_start).replace(".", "")[-1])
-                
-                if price_diff > 0 and last_digit >= 8:
-                    action = 'PUT'
-                elif price_diff < 0 and last_digit <= 2:
+                # تحديد اتجاه الصفقة حسب لون شمعة الدقيقة الأولى
+                if price_end_first_min > price_start:
                     action = 'CALL'
+                elif price_end_first_min < price_start:
+                    action = 'PUT'
                 else:
-                    print(f"[i] السوق مستقر لـ {symbol}")
                     continue
 
                 selected_signal = {
                     "symbol": symbol,
                     "action": action,
-                    "price_start": price_start
+                    "entry_price": price_end_first_min
                 }
-                print(f"[🔥] تم العثور على فرصة للشمعة القادمة في {symbol}: {action}")
+                print(f"[🔥] تم تحديد الإشارة في {symbol}: {action} (سعر الدخول: {price_end_first_min})")
                 break
-                
-                time.sleep(1)
 
             if not selected_signal:
-                print("[i] لا توجد فرصة مطابقة للشروط في هذه اللحظة، بانتظار الفرصة القادمة...")
-                time.sleep(5)
+                print("[i] لا توجد إشارة واضحة، بانتظار الشمعة القادمة...")
+                time.sleep(10)
                 continue
 
             symbol = selected_signal["symbol"]
             action = selected_signal["action"]
-            price_start = selected_signal["price_start"]
+            entry_price = selected_signal["entry_price"]
 
             emoji = "🟢" if action == "CALL" else "🔴"
             
             signal_msg = (
-                f"🚨 *إشارة مبكرة (الشمعة القادمة)*\n\n"
+                f"🚨 *إشارة تداول جديدة*\n\n"
                 f"📊 الزوج: `{symbol}`\n"
-                f"{emoji} العملية للشمعة القادمة: *{action} (1 دقيقة)*\n"
-                f"💵 مبلغ الصفقة: `{current_percent}%` من الرصيد\n"
-                f"⏳ *الحالة:* تم الإرسال قبل افتتاح الشمعة بـ 30 ثانية، استعد للتنفيذ مع الافتتاح!"
+                f"{emoji} العملية: *{action} (صفقة دقيقة واحدة)*\n"
+                f"💵 سعر الدخول: `{entry_price}`\n"
+                f"⏳ *الحالة:* جاري انتظار نتيجة الدقيقة..."
             )
             send_telegram(signal_msg)
-
-            print(f"[⏳] تم إرسال الإشارة المبكرة لـ {symbol}. جاري انتظار افتتاح الشمعة ومرور دقيقة...")
             
-            start_wait = time.time()
-            while time.time() - start_wait < 80:
+            # الانتظار لمدة دقيقة واحدة بالضبط لحساب النتيجة بدقة
+            start_trade_wait = time.time()
+            while time.time() - start_trade_wait < 62:
                 time.sleep(1)
 
-            price_end = get_fastforex_price(symbol)
-            if not price_end:
-                price_end = price_start
+            final_price = get_fastforex_price(symbol)
+            if not final_price:
+                final_price = entry_price
 
-            amount_to_trade = round((account_balance * current_percent) / 100.0, 2)
+            amount_to_trade = round((account_balance * FIXED_PERCENT) / 100.0, 2)
             if amount_to_trade < 1.0:
                 amount_to_trade = 1.0
 
-            # الاعتماد على لون الشمعة (اتجاه السعر بين البداية والنهاية للدقيقة)
+            # حساب النتيجة بدقة تامة مقارنة سعر الدخول بسعر الإغلاق بعد دقيقة
             if action == 'CALL':
-                is_win = price_end > price_start  # شمعة خضراء (صاعدة)
+                is_win = final_price > entry_price
             else:  
-                is_win = price_end < price_start  # شمعة حمراء (هابطة)
+                is_win = final_price < entry_price
 
             if is_win:
                 profit = round(amount_to_trade * 0.85, 2)
                 account_balance += profit
                 session_profit += profit
-                current_percent = BASE_PERCENT  
                 result_txt = f"ربح (+${profit:.2f}) ✅"
             else:
                 account_balance -= amount_to_trade
                 session_profit -= amount_to_trade
-                current_percent *= 2  
                 result_txt = f"خسارة (-${amount_to_trade}) ❌"
 
-            print(f"[📊] نتيجة صفقة الدقيقة {symbol}: {result_txt}")
             result_msg = (
-                f"📌 *نتيجة صفقة 1 دقيقة ({symbol}):*\n\n"
+                f"📌 *نتيجة صفقة ({symbol}):*\n\n"
                 f"العملية: *{action}*\n"
-                f"السعر البدائي: `{price_start}` | السعر النهائي: `{price_end}`\n"
+                f"سعر الدخول: `{entry_price}` | سعر الإغلاق: `{final_price}`\n"
                 f"النتيجة: *{result_txt}*\n"
                 f"💰 إجمالي أرباح الجلسة: `${session_profit:.2f}`\n"
                 f"💼 الرصيد الحالي: `${account_balance:.2f}`\n"
@@ -189,7 +210,7 @@ def nori_strategy_loop():
 
         except Exception as err:
             print(f"Loop Error: {err}")
-            time.sleep(5)
+            time.sleep(10)
 
 if __name__ == "__main__":
     nori_strategy_loop()
