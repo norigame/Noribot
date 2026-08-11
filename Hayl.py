@@ -55,6 +55,7 @@ def nori_strategy_loop():
     )
     
     last_prices = {}
+    last_signaled_symbol = None
     print("--- بدأ البوت في فحص الأسواق (الإشارة قبل 30 ثانية) ---")
 
     while True:
@@ -82,6 +83,9 @@ def nori_strategy_loop():
             selected_signal = None
 
             for symbol in SYMBOLS:
+                if symbol == last_signaled_symbol:
+                    continue
+
                 price_start = get_fastforex_price(symbol)
                 if not price_start:
                     continue
@@ -117,6 +121,9 @@ def nori_strategy_loop():
 
             symbol = selected_signal["symbol"]
             action = selected_signal["action"]
+            
+            last_signaled_symbol = symbol
+
             emoji = "🟢" if action == "CALL" else "🔴"
             
             signal_msg = (
