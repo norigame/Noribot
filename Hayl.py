@@ -13,9 +13,6 @@ initial_balance = 1000.0
 account_balance = initial_balance
 BASE_PERCENT = 1.0        
 current_percent = BASE_PERCENT
-
-target_profit_pct = 10.0   
-stop_loss_pct = 6.0        
 session_profit = 0.0
 
 SYMBOLS = [
@@ -50,8 +47,7 @@ def nori_strategy_loop():
     
     send_telegram(
         "🚀 *تم تشغيل Nori Signals*\n"
-        "📊 البوت يراقب الأسواق ليرسل أقوى إشارة قبل 30 ثانية...\n"
-        "🎯 الهدف: 10% | 🛑 الوقف: 6%"
+        "📊 البوت يراقب الأسواق ليرسل أقوى إشارة قبل 30 ثانية..."
     )
     
     last_prices = {}
@@ -60,16 +56,6 @@ def nori_strategy_loop():
 
     while True:
         try:
-            target_dollar = initial_balance * (target_profit_pct / 100.0)
-            stop_loss_dollar = initial_balance * (stop_loss_pct / 100.0)
-
-            if session_profit >= target_dollar:
-                send_telegram(f"🎯 *تم تحقيق هدف الربح (10%)!* (+${session_profit:.2f})")
-                break
-            if session_profit <= -stop_loss_dollar:
-                send_telegram(f"🛑 *تم بلوغ حد الخسارة (6%)!* (-${abs(session_profit):.2f})")
-                break
-
             current_time = time.localtime()
             current_min = current_time.tm_min
             current_sec = current_time.tm_sec
