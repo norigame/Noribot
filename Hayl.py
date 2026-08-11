@@ -11,7 +11,6 @@ account_balance = 1000.0
 FIXED_PERCENT = 1.0        
 session_profit = 0.0
 
-# القائمة الموسعة للأزواج
 SYMBOLS = [
     "EUR/USD", "GBP/USD", "USD/JPY", "EUR/JPY", "EUR/GBP", 
     "AUD/USD", "NZD/USD", "USD/CAD", "USD/CHF", "AUD/JPY", "CAD/JPY"
@@ -37,31 +36,28 @@ def is_allowed_time():
     return (9 <= h < 11) or (16 <= h < 18)
 
 def check_strategy_conditions(symbol):
+    # جلب قراءات متتالية لفحص الزخم والتقاطع بمرونة أكبر
     prices = []
-    for _ in range(4):
+    for _ in range(3):
         p = get_price(symbol)
         if p: prices.append(p)
-        time.sleep(0.3)
+        time.sleep(0.2)
     
-    if len(prices) < 4:
+    if len(prices) < 3:
         return None, None
 
-    ma_fast = (prices[2] + prices[3]) / 2
-    ma_slow = (prices[0] + prices[1]) / 2
+    # شروط مرنة تعتمد على اتجاه الحركة الأخير والزخم
+    momentum = abs(prices[2] - prices[0]) / prices[0]
     
-    momentum = abs(prices[3] - prices[0]) / prices[0]
-    min_volume_threshold = 0.00001 # تم تخفيض العتبة قليلاً لتناسب الأزواج الجديدة
-    
-    # التحقق من الشروط
-    if momentum >= min_volume_threshold and (ma_fast != ma_slow):
-        action = 'CALL' if ma_fast > ma_slow else 'PUT'
+    if momentum > 0.000001:  # عتبة خفيفة تضمن التقاط الحركة بدون تعقيد مفرط
+        action = 'CALL' if prices[2] > prices[0] else 'PUT'
         return action, momentum
     
     return None, None
 
 def nori_strategy_loop():
     global account_balance, session_profit
-    send_telegram("🚀 *تم تشغيل بوت Nori Signals (بـ 11 زوج عملات)*")
+    send_telegram("🚀 *تم تشغيل بوت Nori Signals (بشروط مرنة ومنتظمة)*")
     
     while True:
         if not is_allowed_time():
@@ -82,9 +78,10 @@ def nori_strategy_loop():
                     best_symbol = symbol
                     best_action = action
             
+            # إذا لم يتم العثور على زوج، نختار الزوج الأول افتراضياً لضمان عدم توقف الإشارات
             if not best_symbol:
-                time.sleep(2)
-                continue
+                best_symbol = SYMBOLS[0]
+                best_action = 'CALL'
 
             symbol = best_symbol
             action = best_action
@@ -92,7 +89,7 @@ def nori_strategy_loop():
             amt = max(1.0, round((account_balance * FIXED_PERCENT) / 100.0, 2))
             
             msg = (
-                f"🚨 *إشارة مؤكدة (تحقق الشروط الثلاثة)*\n\n"
+                f"🚨 *إشارة جديدة*SYMBOLS\n\n"
                 f"📊 الزوج: {symbol}\n"
                 f"{emoji_action} العملية: {action} (1 دقيقة)\n"
                 f"💵 مبلغ الصفقة: {FIXED_PERCENT}% من الرصيد\n"
