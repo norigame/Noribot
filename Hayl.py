@@ -2,14 +2,15 @@ import time
 import requests
 from datetime import datetime
 
-# --- الإعدادات ---
+# --- الإعدادات الأساسية ---
 TELEGRAM_BOT_TOKEN = "8792506572:AAHH3hVOz895ca4W7-HaZ6bms1J_8kiFtXA"
 TELEGRAM_CHAT_ID = "1792638515"
 FASTFOREX_API_KEY = "3e4659f78c-2f97fec538-tjj1bw"
 
-initial_balance = 1000.0
-account_balance = initial_balance
+account_balance = 1000.0
 FIXED_PERCENT = 1.0        
+target_profit_pct = 10.0   
+stop_loss_pct = 6.0        
 session_profit = 0.0
 
 SYMBOLS = ["EUR/USD", "GBP/USD", "USD/JPY", "EUR/JPY", "EUR/GBP"]
@@ -34,7 +35,7 @@ def is_allowed_time():
 
 def nori_strategy_loop():
     global account_balance, session_profit
-    send_telegram("🚀 *البوت يعمل: إشارات مبكرة (قبل 30 ثانية)*")
+    send_telegram("🚀 *تم تشغيل بوت Nori Signals (نسخة النتائج بلون الشمعة)*\n⏰ أوقات العمل: 09:00 - 11:00 ومن 16:00 - 18:00")
     
     while True:
         if not is_allowed_time():
@@ -42,32 +43,55 @@ def nori_strategy_loop():
             continue
 
         now = datetime.now()
-        # شرط الإرسال: عند الثانية 30 من الدقيقة 04, 09, 14...
-        if (now.minute + 1) % 5 == 0 and now.second == 30:
+        current_min = now.minute
+        current_sec = now.second
+        
+        # الإرسال قبل 30 ثانية من بداية الشمعة الجديدة (عند الثانية 30 من الدقيقة 4، 9، 14...)
+        if (current_min + 1) % 5 == 0 and current_sec == 30:
             
-            # اختيار زوج عشوائي وإرسال الإشارة فوراً (بدون انتظار الدقيقة الأولى)
-            symbol = SYMBOLS[0] 
-            entry_price = get_price(symbol)
+            # اختيار العملة وتحديد الاتجاه بناءً على لون الشمعة أو التغير اللحظي
+            symbol = SYMBOLS[0]
+            p1 = get_price(symbol)
+            time.sleep(2)
+            p2 = get_price(symbol)
             
-            # تحديد الاتجاه بناءً على تقلب بسيط أو اتجاه السوق الحالي
-            action = 'CALL' if entry_price % 2 == 0 else 'PUT' 
-            
-            send_telegram(f"🚨 *إشارة دخول مبكرة*\n📊 {symbol} | {action}\n💵 دخول: {entry_price}\n⏳ *نفذ الصفقة الآن!*")
-            
-            # انتظار دقيقة كاملة لمعرفة النتيجة
-            time.sleep(62)
-            
-            final_price = get_price(symbol)
-            is_win = (final_price > entry_price) if action == 'CALL' else (final_price < entry_price)
+            action = 'CALL' if p2 >= p1 else 'PUT'
+            emoji_action = '🟢' if action == 'CALL' else '🔴'
             
             amt = max(1.0, round((account_balance * FIXED_PERCENT) / 100.0, 2))
+            
+            # إرسال الإشارة بالشكل المطلوب تماماً
+            msg = (
+                f"🚨 *إشارة مبكرة (الشمعة القادمة)*\n\n"
+                f"📊 الزوج: {symbol}\n"
+                f"{emoji_action} العملية للشمعة القادمة: {action} (1 دقيقة)\n"
+                f"💵 مبلغ الصفقة: {FIXED_PERCENT}% من الرصيد\n"
+                f"⏳ الحالة: تم الإرسال قبل افتتاح الشمعة بـ 30 ثانية، استعد للتنفيذ مع الافتتاح!"
+            )
+            send_telegram(msg)
+            
+            # انتظار حتى افتتاح الشمعة ثم انتهاء دقيقتها لمعرفة لون الإغلاق
+            time.sleep(32) # لكي نصل لبداية الشمعة الجديدة
+            open_price_candle = get_price(symbol)
+            
+            time.sleep(60) # انتظار انتهاء الشمعة (دقيقة كاملة)
+            close_price_candle = get_price(symbol)
+            
+            # تحديد الربح أو الخسارة حسب لون الشمعة (إذا أغلق أعلى فهي خضراء CALL، وإذا أسفل فهي حمراء PUT)
+            is_win = (close_price_candle > open_price_candle) if action == 'CALL' else (close_price_candle < open_price_candle)
+            
+            profit_amt = round(amt * 0.85, 2)
             if is_win:
-                account_balance += round(amt * 0.85, 2)
-                send_telegram(f"📌 *النتيجة: ربح ✅*")
+                account_balance += profit_amt
+                session_profit += profit_amt
+                result_msg = f"📌 *نتيجة صفقة 1 دقيقة ({symbol}):*\n\nالعملية: {action}\nالنتيجة: ربح (+${profit_amt})\n✅ إجمالي أرباح الجلسة: ${session_profit:.2f}\n💰 الرصيد الحالي: ${account_balance:.2f}"
             else:
                 account_balance -= amt
-                send_telegram(f"📌 *النتيجة: خسارة ❌*")
-        
+                session_profit -= amt
+                result_msg = f"📌 *نتيجة صفقة 1 دقيقة ({symbol}):*\n\nالعملية: {action}\nالنتيجة: خسارة (-${amt})\n❌ إجمالي أرباح الجلسة: ${session_profit:.2f}\n💰 الرصيد الحالي: ${account_balance:.2f}"
+            
+            send_telegram(result_msg)
+            
         time.sleep(0.5)
 
 if __name__ == "__main__":
