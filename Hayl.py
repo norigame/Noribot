@@ -14,6 +14,8 @@ account_balance = initial_balance
 BASE_PERCENT = 1.0        
 current_percent = BASE_PERCENT
 session_profit = 0.0
+total_wins = 0
+total_losses = 0
 
 SYMBOLS = [
     "EUR/USD", "GBP/USD", "USD/JPY",
@@ -43,7 +45,7 @@ def get_fastforex_price(symbol):
     return None
 
 def nori_strategy_loop():
-    global current_percent, account_balance, session_profit
+    global current_percent, account_balance, session_profit, total_wins, total_losses
     
     send_telegram(
         "🚀 *تم تشغيل Nori Signals*\n"
@@ -147,17 +149,20 @@ def nori_strategy_loop():
                 account_balance += profit
                 session_profit += profit
                 current_percent = BASE_PERCENT  
+                total_wins += 1
                 result_txt = f"ربح (+${profit:.2f}) ✅"
             else:
                 account_balance -= amount_to_trade
                 session_profit -= amount_to_trade
                 current_percent *= 2  
+                total_losses += 1
                 result_txt = f"خسارة (-${amount_to_trade}) ❌"
 
             result_msg = (
                 f"📌 *نتيجة صفقة 1 دقيقة ({symbol}):*\n\n"
                 f"العملية: *{action}*\n"
                 f"النتيجة: *{result_txt}*\n"
+                f"📈 صفقات رابحة: `{total_wins}` | 📉 صفقات خاسرة: `{total_losses}`\n"
                 f"💰 إجمالي أرباح الجلسة: `${session_profit:.2f}`\n"
                 f"💼 الرصيد الحالي: `${account_balance:.2f}`\n"
                 f"────────────────"
