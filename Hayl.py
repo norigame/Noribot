@@ -35,7 +35,7 @@ def is_allowed_time():
 
 def nori_strategy_loop():
     global account_balance, session_profit
-    send_telegram("🚀 *تم تشغيل بوت Nori Signals (نسخة النتائج بلون الشمعة)*\n⏰ أوقات العمل: 09:00 - 11:00 ومن 16:00 - 18:00")
+    send_telegram("🚀 *تم تشغيل بوت Nori Signals (فحص واختيار أقوى إشارة)*")
     
     while True:
         if not is_allowed_time():
@@ -43,26 +43,37 @@ def nori_strategy_loop():
             continue
 
         now = datetime.now()
-        current_min = now.minute
-        current_sec = now.second
-        
-        # الإرسال قبل 30 ثانية من بداية الشمعة الجديدة (عند الثانية 30 من الدقيقة 4، 9، 14...)
-        if (current_min + 1) % 5 == 0 and current_sec == 30:
+        if (now.minute + 1) % 5 == 0 and now.second == 30:
             
-            # اختيار العملة وتحديد الاتجاه بناءً على لون الشمعة أو التغير اللحظي
-            symbol = SYMBOLS[0]
-            p1 = get_price(symbol)
-            time.sleep(2)
-            p2 = get_price(symbol)
+            # فحص جميع الأزواج وحساب قوة التغير لكل واحد
+            best_symbol = None
+            max_change = -1.0
+            best_action = 'CALL'
             
-            action = 'CALL' if p2 >= p1 else 'PUT'
+            for symbol in SYMBOLS:
+                p1 = get_price(symbol)
+                time.sleep(0.5)
+                p2 = get_price(symbol)
+                
+                if p1 and p2:
+                    change = abs(p2 - p1) / p1
+                    if change > max_change:
+                        max_change = change
+                        best_symbol = symbol
+                        best_action = 'CALL' if p2 >= p1 else 'PUT'
+            
+            if not best_symbol:
+                best_symbol = SYMBOLS[0]
+                best_action = 'CALL'
+
+            symbol = best_symbol
+            action = best_action
             emoji_action = '🟢' if action == 'CALL' else '🔴'
             
             amt = max(1.0, round((account_balance * FIXED_PERCENT) / 100.0, 2))
             
-            # إرسال الإشارة بالشكل المطلوب تماماً
             msg = (
-                f"🚨 *إشارة مبكرة (الشمعة القادمة)*\n\n"
+                f"🚨 *إشارة مبكرة (الشمعة القادمة - الأقوى)*\n\n"
                 f"📊 الزوج: {symbol}\n"
                 f"{emoji_action} العملية للشمعة القادمة: {action} (1 دقيقة)\n"
                 f"💵 مبلغ الصفقة: {FIXED_PERCENT}% من الرصيد\n"
@@ -70,14 +81,12 @@ def nori_strategy_loop():
             )
             send_telegram(msg)
             
-            # انتظار حتى افتتاح الشمعة ثم انتهاء دقيقتها لمعرفة لون الإغلاق
-            time.sleep(32) # لكي نصل لبداية الشمعة الجديدة
+            time.sleep(32)
             open_price_candle = get_price(symbol)
             
-            time.sleep(60) # انتظار انتهاء الشمعة (دقيقة كاملة)
+            time.sleep(60)
             close_price_candle = get_price(symbol)
             
-            # تحديد الربح أو الخسارة حسب لون الشمعة (إذا أغلق أعلى فهي خضراء CALL، وإذا أسفل فهي حمراء PUT)
             is_win = (close_price_candle > open_price_candle) if action == 'CALL' else (close_price_candle < open_price_candle)
             
             profit_amt = round(amt * 0.85, 2)
