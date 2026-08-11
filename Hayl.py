@@ -2,7 +2,7 @@ import time
 import requests
 
 # ==========================================
-# تطبيق Nori Signals - صفقة 1 دقيقة (FastForex API)
+# تطبيق Nori Signals - صفقة 1 دقيقة (شمعة انعكاسية)
 # ==========================================
 TELEGRAM_BOT_TOKEN = "8792506572:AAHH3hVOz895ca4W7-HaZ6bms1J_8kiFtXA"
 TELEGRAM_CHAT_ID = "1792638515"
@@ -18,7 +18,6 @@ target_profit_pct = 10.0
 stop_loss_pct = 6.0        
 session_profit = 0.0
 
-# القائمة الحالية للأزواج
 SYMBOLS = [
     "EUR/USD", "GBP/USD", "USD/JPY",
     "EUR/JPY", "EUR/GBP"
@@ -50,13 +49,13 @@ def nori_strategy_loop():
     global current_percent, account_balance, session_profit
     
     send_telegram(
-        "🚀 *تم تشغيل Nori Signals (الإشارة قبل افتتاح الشمعة بـ 30 ثانية)*\n"
-        "📊 البوت يرسل الإشارة قبل بداية الشمعة الجديدة بـ 30 ثانية...\n"
+        "🚀 *تم تشغيل Nori Signals (استراتيجية الشمعة الانعكاسية)*\n"
+        "📊 البوت يراقب ظهور شمعة انعكاسية لإرسال الإشارة قبل 30 ثانية...\n"
         "🎯 الهدف: 10% | 🛑 الوقف: 6%"
     )
     
     last_prices = {}
-    print("--- بدأ البوت في فحص الأسواق (الإشارة قبل 30 ثانية) ---")
+    print("--- بدأ البوت في مراقبة الشموع الانعكاسية ---")
 
     while True:
         try:
@@ -74,25 +73,19 @@ def nori_strategy_loop():
             current_min = current_time.tm_min
             current_sec = current_time.tm_sec
 
-            # إرسال الإشارة قبل 30 ثانية من افتتاح الشمعة الجديدة (في آخر 30 ثانية من الشمعة الحالية)
+            # التحقق من آخر 30 ثانية من الشمعة الحالية
             is_near_end_of_candle = ((current_min + 1) % 5 == 0) and (30 <= current_sec <= 59)
 
             if not is_near_end_of_candle:
                 time.sleep(1)
                 continue
 
-            print("\n[*] ===== قبل افتتاح الشمعة بـ 30 ثانية: البحث عن فرصة للشمعة القادمة =====")
-            
             selected_signal = None
 
             for symbol in SYMBOLS:
-                print(f"[*] جاري فحص السعر للزوج: {symbol}...")
                 price_start = get_fastforex_price(symbol)
-                
                 if not price_start:
                     continue
-
-                print(f"[+] السعر الحالي لـ {symbol} هو: {price_start}")
 
                 if symbol not in last_prices:
                     last_prices[symbol] = price_start
@@ -102,65 +95,64 @@ def nori_strategy_loop():
                 last_prices[symbol] = price_start  
 
                 price_diff = price_start - prev_price
-                last_digit = int(str(price_start).replace(".", "")[-1])
                 
-                if price_diff > 0 and last_digit >= 8:
-                    action = 'PUT'
-                elif price_diff < 0 and last_digit <= 2:
-                    action = 'CALL'
+                # شرط الشمعة الانعكاسية (تغير ملحوظ يعكس الحركة السابقة)
+                if price_diff > 0.0001:  
+                    action = 'PUT'  # ارعكاس هبوطي
+                elif price_diff < -0.0001: 
+                    action = 'CALL' # ارعكاس صعودي
                 else:
-                    print(f"[i] السوق مستقر لـ {symbol}")
                     continue
 
                 selected_signal = {
                     "symbol": symbol,
-                    "action": action,
-                    "price_start": price_start
+                    "action": action
                 }
-                print(f"[🔥] تم العثور على فرصة للشمعة القادمة في {symbol}: {action}")
+                print(f"[🔥] شمعة انعكاسية مؤكدة في {symbol} للعملية: {action}")
                 break
                 
                 time.sleep(1)
 
             if not selected_signal:
-                print("[i] لا توجد فرصة مطابقة للشروط في هذه اللحظة، بانتظار الفرصة القادمة...")
                 time.sleep(5)
                 continue
 
             symbol = selected_signal["symbol"]
             action = selected_signal["action"]
-            price_start = selected_signal["price_start"]
-
             emoji = "🟢" if action == "CALL" else "🔴"
             
             signal_msg = (
-                f"🚨 *إشارة مبكرة (الشمعة القادمة)*\n\n"
+                f"🚨 *إشارة انعكاسية مبكرة*\n\n"
                 f"📊 الزوج: `{symbol}`\n"
                 f"{emoji} العملية للشمعة القادمة: *{action} (1 دقيقة)*\n"
                 f"💵 مبلغ الصفقة: `{current_percent}%` من الرصيد\n"
-                f"⏳ *الحالة:* تم الإرسال قبل افتتاح الشمعة بـ 30 ثانية، استعد للتنفيذ مع الافتتاح!"
+                f"⏳ *الحالة:* تم رصد شمعة انعكاسية وإرسال الإشارة قبل 30 ثانية!"
             )
             send_telegram(signal_msg)
 
-            print(f"[⏳] تم إرسال الإشارة المبكرة لـ {symbol}. جاري انتظار افتتاح الشمعة ومرور دقيقة...")
-            
-            start_wait = time.time()
-            while time.time() - start_wait < 80:
-                time.sleep(1)
+            # الانتظار حتى افتتاح الشمعة الجديدة تماماً
+            while True:
+                t = time.localtime()
+                if t.tm_sec == 0:
+                    break
+                time.sleep(0.1)
 
-            price_end = get_fastforex_price(symbol)
-            if not price_end:
-                price_end = price_start
+            open_candle_price = get_fastforex_price(symbol) or 0.0
+
+            # انتظار دقيقة كاملة لمعرفة لون إغلاق الشمعة
+            time.sleep(60)
+
+            close_candle_price = get_fastforex_price(symbol) or open_candle_price
 
             amount_to_trade = round((account_balance * current_percent) / 100.0, 2)
             if amount_to_trade < 1.0:
                 amount_to_trade = 1.0
 
-            # الاعتماد على لون الشمعة (اتجاه السعر بين البداية والنهاية للدقيقة)
+            # التحقق من لون الشمعة للنتيجة
             if action == 'CALL':
-                is_win = price_end > price_start  # شمعة خضراء (صاعدة)
+                is_win = close_candle_price > open_candle_price
             else:  
-                is_win = price_end < price_start  # شمعة حمراء (هابطة)
+                is_win = close_candle_price < open_candle_price
 
             if is_win:
                 profit = round(amount_to_trade * 0.85, 2)
@@ -174,11 +166,9 @@ def nori_strategy_loop():
                 current_percent *= 2  
                 result_txt = f"خسارة (-${amount_to_trade}) ❌"
 
-            print(f"[📊] نتيجة صفقة الدقيقة {symbol}: {result_txt}")
             result_msg = (
                 f"📌 *نتيجة صفقة 1 دقيقة ({symbol}):*\n\n"
                 f"العملية: *{action}*\n"
-                f"السعر البدائي: `{price_start}` | السعر النهائي: `{price_end}`\n"
                 f"النتيجة: *{result_txt}*\n"
                 f"💰 إجمالي أرباح الجلسة: `${session_profit:.2f}`\n"
                 f"💼 الرصيد الحالي: `${account_balance:.2f}`\n"
