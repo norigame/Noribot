@@ -2,7 +2,7 @@ import time
 import requests
 
 # ==========================================
-# تطبيق Nori Signals - صفقة 1 دقيقة (شمعة انعكاسية)
+# تطبيق Nori Signals - صفقة 1 دقيقة (FastForex API)
 # ==========================================
 TELEGRAM_BOT_TOKEN = "8792506572:AAHH3hVOz895ca4W7-HaZ6bms1J_8kiFtXA"
 TELEGRAM_CHAT_ID = "1792638515"
@@ -49,13 +49,13 @@ def nori_strategy_loop():
     global current_percent, account_balance, session_profit
     
     send_telegram(
-        "🚀 *تم تشغيل Nori Signals (استراتيجية الشمعة الانعكاسية)*\n"
-        "📊 البوت يراقب ظهور شمعة انعكاسية لإرسال الإشارة قبل 30 ثانية...\n"
+        "🚀 *تم تشغيل Nori Signals*\n"
+        "📊 البوت يراقب الأسواق ليرسل أقوى إشارة قبل 30 ثانية...\n"
         "🎯 الهدف: 10% | 🛑 الوقف: 6%"
     )
     
     last_prices = {}
-    print("--- بدأ البوت في مراقبة الشموع الانعكاسية ---")
+    print("--- بدأ البوت في فحص الأسواق (الإشارة قبل 30 ثانية) ---")
 
     while True:
         try:
@@ -73,7 +73,6 @@ def nori_strategy_loop():
             current_min = current_time.tm_min
             current_sec = current_time.tm_sec
 
-            # التحقق من آخر 30 ثانية من الشمعة الحالية
             is_near_end_of_candle = ((current_min + 1) % 5 == 0) and (30 <= current_sec <= 59)
 
             if not is_near_end_of_candle:
@@ -96,11 +95,10 @@ def nori_strategy_loop():
 
                 price_diff = price_start - prev_price
                 
-                # شرط الشمعة الانعكاسية (تغير ملحوظ يعكس الحركة السابقة)
                 if price_diff > 0.0001:  
-                    action = 'PUT'  # ارعكاس هبوطي
+                    action = 'PUT'  
                 elif price_diff < -0.0001: 
-                    action = 'CALL' # ارعكاس صعودي
+                    action = 'CALL' 
                 else:
                     continue
 
@@ -108,7 +106,7 @@ def nori_strategy_loop():
                     "symbol": symbol,
                     "action": action
                 }
-                print(f"[🔥] شمعة انعكاسية مؤكدة في {symbol} للعملية: {action}")
+                print(f"[🔥] تم رصد أقوى إشارة في {symbol} للعملية: {action}")
                 break
                 
                 time.sleep(1)
@@ -122,15 +120,14 @@ def nori_strategy_loop():
             emoji = "🟢" if action == "CALL" else "🔴"
             
             signal_msg = (
-                f"🚨 *إشارة انعكاسية مبكرة*\n\n"
+                f"🚨 *إشارة مبكرة (أقوى إشارة)*\n\n"
                 f"📊 الزوج: `{symbol}`\n"
                 f"{emoji} العملية للشمعة القادمة: *{action} (1 دقيقة)*\n"
                 f"💵 مبلغ الصفقة: `{current_percent}%` من الرصيد\n"
-                f"⏳ *الحالة:* تم رصد شمعة انعكاسية وإرسال الإشارة قبل 30 ثانية!"
+                f"⏳ *الحالة:* البوت يراقب الأسواق ليرسل أقوى إشارة قبل 30 ثانية!"
             )
             send_telegram(signal_msg)
 
-            # الانتظار حتى افتتاح الشمعة الجديدة تماماً
             while True:
                 t = time.localtime()
                 if t.tm_sec == 0:
@@ -139,7 +136,6 @@ def nori_strategy_loop():
 
             open_candle_price = get_fastforex_price(symbol) or 0.0
 
-            # انتظار دقيقة كاملة لمعرفة لون إغلاق الشمعة
             time.sleep(60)
 
             close_candle_price = get_fastforex_price(symbol) or open_candle_price
@@ -148,7 +144,6 @@ def nori_strategy_loop():
             if amount_to_trade < 1.0:
                 amount_to_trade = 1.0
 
-            # التحقق من لون الشمعة للنتيجة
             if action == 'CALL':
                 is_win = close_candle_price > open_candle_price
             else:  
