@@ -11,7 +11,11 @@ account_balance = 1000.0
 FIXED_PERCENT = 1.0        
 session_profit = 0.0
 
-SYMBOLS = ["EUR/USD", "GBP/USD", "USD/JPY", "EUR/JPY", "EUR/GBP"]
+# القائمة الموسعة للأزواج
+SYMBOLS = [
+    "EUR/USD", "GBP/USD", "USD/JPY", "EUR/JPY", "EUR/GBP", 
+    "AUD/USD", "NZD/USD", "USD/CAD", "USD/CHF", "AUD/JPY", "CAD/JPY"
+]
 
 def send_telegram(msg):
     try:
@@ -33,12 +37,6 @@ def is_allowed_time():
     return (9 <= h < 11) or (16 <= h < 18)
 
 def check_strategy_conditions(symbol):
-    """
-    تطبيق الشروط الثلاثة:
-    1. ارتداد قوي من دعم/مقاومة (محاكاة بفحص نطاق الأسعار والقمم/القعان اللحظية).
-    2. اختراق حجمي بحدوث زخم عالٍ (فحص سرعة التغير وحجم الحركة).
-    3. تقاطع المتوسطات المتحركة السريعة (مقارنة متوسط آخر الأسعار).
-    """
     prices = []
     for _ in range(4):
         p = get_price(symbol)
@@ -48,18 +46,13 @@ def check_strategy_conditions(symbol):
     if len(prices) < 4:
         return None, None
 
-    # الشرط 3: تقاطع المتوسطات السريعة (مقارنة متوسط آخر سعرين مع المتوسط السابق)
     ma_fast = (prices[2] + prices[3]) / 2
     ma_slow = (prices[0] + prices[1]) / 2
     
-    # الشرط 2: الزخم والحجم (حساب قوة التغير)
     momentum = abs(prices[3] - prices[0]) / prices[0]
-    min_volume_threshold = 0.00002 # عتبة الزخم المطلوبة
+    min_volume_threshold = 0.00001 # تم تخفيض العتبة قليلاً لتناسب الأزواج الجديدة
     
-    # الشرط 1: محاكاة الارتداد من مستويات رئيسية عبر مراقبة ارتداد السعر الأخير عن أقل/أعلى سعر مرصود
-    is_rebound = (prices[3] > prices[2] and prices[2] <= min(prices)) or (prices[3] < prices[2] and prices[2] >= max(prices))
-
-    # التحقق من تحقق الشروط الثلاثة معاً
+    # التحقق من الشروط
     if momentum >= min_volume_threshold and (ma_fast != ma_slow):
         action = 'CALL' if ma_fast > ma_slow else 'PUT'
         return action, momentum
@@ -68,7 +61,7 @@ def check_strategy_conditions(symbol):
 
 def nori_strategy_loop():
     global account_balance, session_profit
-    send_telegram("🚀 *تم تشغيل بوت Nori Signals (بالاستراتيجية الجديدة: 3 شروط متقدمة)*")
+    send_telegram("🚀 *تم تشغيل بوت Nori Signals (بـ 11 زوج عملات)*")
     
     while True:
         if not is_allowed_time():
@@ -82,7 +75,6 @@ def nori_strategy_loop():
             best_action = 'CALL'
             max_mom = -1.0
             
-            # فحص الأزواج لاختيار الأفق والأقوى بناءً على الشروط الجديدة
             for symbol in SYMBOLS:
                 action, mom = check_strategy_conditions(symbol)
                 if action and mom and mom > max_mom:
@@ -90,7 +82,6 @@ def nori_strategy_loop():
                     best_symbol = symbol
                     best_action = action
             
-            # إذا لم تتحقق الشروط بدقة على أي زوج، ننتظر الشمعة القادمة لعدم الدخول في صفقات ضعيفة
             if not best_symbol:
                 time.sleep(2)
                 continue
@@ -103,16 +94,14 @@ def nori_strategy_loop():
             msg = (
                 f"🚨 *إشارة مؤكدة (تحقق الشروط الثلاثة)*\n\n"
                 f"📊 الزوج: {symbol}\n"
-                f"{emoji_action} العملية للشمعة القادمة: {action} (1 دقيقة)\n"
+                f"{emoji_action} العملية: {action} (1 دقيقة)\n"
                 f"💵 مبلغ الصفقة: {FIXED_PERCENT}% من الرصيد\n"
-                f"⏳ الحالة: تم الإرسال قبل افتتاح الشمعة بـ 30 ثانية، استعد للتنفيذ!"
+                f"⏳ استعد للتنفيذ مع الافتتاح!"
             )
             send_telegram(msg)
             
-            # انتظار افتتاح الشمعة ولمس النتيجة عبر لون الشمعة
             time.sleep(32)
             open_price_candle = get_price(symbol)
-            
             time.sleep(60)
             close_price_candle = get_price(symbol)
             
@@ -122,11 +111,11 @@ def nori_strategy_loop():
             if is_win:
                 account_balance += profit_amt
                 session_profit += profit_amt
-                result_msg = f"📌 *نتيجة صفقة 1 دقيقة ({symbol}):*\n\nالعملية: {action}\nالنتيجة: ربح (+${profit_amt})\n✅ إجمالي أرباح الجلسة: ${session_profit:.2f}\n💰 الرصيد الحالي: ${account_balance:.2f}"
+                result_msg = f"📌 *نتيجة ({symbol}):* ربح ✅ (+${profit_amt})\n💰 الرصيد: ${account_balance:.2f}"
             else:
                 account_balance -= amt
                 session_profit -= amt
-                result_msg = f"📌 *نتيجة صفقة 1 دقيقة ({symbol}):*\n\nالعملية: {action}\nالنتيجة: خسارة (-${amt})\n❌ إجمالي أرباح الجلسة: ${session_profit:.2f}\n💰 الرصيد الحالي: ${account_balance:.2f}"
+                result_msg = f"📌 *نتيجة ({symbol}):* خسارة ❌ (-${amt})\n💰 الرصيد: ${account_balance:.2f}"
             
             send_telegram(result_msg)
             
