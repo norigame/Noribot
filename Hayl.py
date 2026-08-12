@@ -45,12 +45,9 @@ def get_fastforex_price(symbol):
     return None
 
 def check_round_number_touch(price):
-    # التحقق مما إذا كان السعر الحالي قريب جداً من رقم دائري ينتهي بـ 00 (مثلاً بفارق نقاط معدودات)
     p_int = int(price * 10000)
     remainder = p_int % 100
-    # إذا كان السعر على مقربة شديدة من الرقم الدائري (يعتبر ملامسة أو إعادة اختبار)
     if remainder <= 5 or remainder >= 95:
-        # إرجاع قيمة الرقم الدائري المقرب
         return round(p_int / 100) * 100
     return None
 
@@ -87,19 +84,16 @@ def nori_strategy_loop():
                 if not current_price:
                     continue
 
-                # فحص ملامسة الرقم الدائري في الشمعة الحالية بعد إغلاق شمعة الـ 5 دقائق السابقة
                 rn = check_round_number_touch(current_price)
                 
                 if rn is not None:
-                    # تحديد الاتجاه بناءً على موقع السعر بالنسبة للرقم الدائري عند إعادة اللمس
-                    # إذا لامسه من الأسفل ونزل -> هبوط (PUT) | إذا لامسه من الأعلى وصعد -> صعود (CALL)
                     rn_float = rn / 10000.0
+                    # التعديل: اتباع اتجاه الاختراق (اختراق للأعلى = صعود، اختراق للأسفل = هبوط)
                     if current_price >= rn_float:
-                        action = 'PUT'  # ملامسة المقاومة والارتداد هبوطاً
+                        action = 'CALL'  # اختراق وصعود فوق الرقم الدائري
                     else:
-                        action = 'CALL' # ملامسة الدعم والارتداد صعوداً
+                        action = 'PUT'   # هبوط واختراق تحت الرقم الدائري
                 else:
-                    # في حال لم يكن هناك ملامسة دقيقة لروند نمبر، نتابع الزخم الطبيعي
                     continue
 
                 selected_signal = {
