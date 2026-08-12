@@ -2,11 +2,10 @@ import time
 import requests
 
 # ==========================================
-# تطبيق Nori Signals - صفقة 1 دقيقة (FastForex API)
+# تطبيق Nori Signals - صفقة 1 دقيقة
 # ==========================================
 TELEGRAM_BOT_TOKEN = "8792506572:AAHH3hVOz895ca4W7-HaZ6bms1J_8kiFtXA"
 TELEGRAM_CHAT_ID = "1792638515"
-
 FASTFOREX_API_KEY = "3e4659f78c-2f97fec538-tjj1bw"
 
 initial_balance = 1000.0
@@ -17,10 +16,7 @@ session_profit = 0.0
 total_wins = 0
 total_losses = 0
 
-SYMBOLS = [
-    "EUR/USD", "GBP/USD", "USD/JPY",
-    "EUR/JPY", "EUR/GBP"
-]
+SYMBOLS = ["EUR/USD", "GBP/USD", "USD/JPY", "EUR/JPY", "EUR/GBP"]
 
 def send_telegram(msg):
     try:
@@ -32,150 +28,68 @@ def send_telegram(msg):
 def get_fastforex_price(symbol):
     try:
         parts = symbol.split('/')
-        if len(parts) != 2:
-            return None
-        base, quote = parts[0], parts[1]
-        url = f"https://api.fastforex.io/fetch-one?from={base}&to={quote}&api_key={FASTFOREX_API_KEY}"
+        url = f"https://api.fastforex.io/fetch-one?from={parts[0]}&to={parts[1]}&api_key={FASTFOREX_API_KEY}"
         response = requests.get(url, timeout=5)
         data = response.json()
-        if "result" in data and quote in data["result"]:
-            return float(data["result"][quote])
-    except Exception as e:
-        print(f"API Error: {e}")
-    return None
+        return float(data["result"][parts[1]])
+    except: return None
 
 def check_round_number_touch(price):
     p_int = int(price * 10000)
-    remainder = p_int % 100
-    if remainder <= 5 or remainder >= 95:
-        return round(p_int / 100) * 100
-    return None
+    return round(p_int / 100) * 100 if (p_int % 100 <= 5 or p_int % 100 >= 95) else None
 
 def nori_strategy_loop():
     global current_percent, account_balance, session_profit, total_wins, total_losses
-    
-    send_telegram(
-        "🚀 *تم تشغيل Nori Signals*\n"
-        "📊 البوت يراقب الأسواق ليرسل أقوى إشارة قبل 30 ثانية..."
-    )
-    
+    send_telegram("🚀 *تم تشغيل Nori Signals*")
     last_signaled_symbol = None
-    print("--- بدأ البوت في فحص الأسواق (الإشارة قبل 30 ثانية) ---")
-
+    
     while True:
         try:
-            current_time = time.localtime()
-            current_min = current_time.tm_min
-            current_sec = current_time.tm_sec
-
-            is_near_end_of_candle = ((current_min + 1) % 5 == 0) and (30 <= current_sec <= 59)
-
-            if not is_near_end_of_candle:
-                time.sleep(1)
-                continue
-
-            selected_signal = None
-
             for symbol in SYMBOLS:
-                if symbol == last_signaled_symbol:
-                    continue
+                price = get_fastforex_price(symbol)
+                if not price or symbol == last_signaled_symbol: continue
 
-                current_price = get_fastforex_price(symbol)
-                if not current_price:
-                    continue
+                rn = check_round_number_touch(price)
+                if rn is None: continue
 
-                rn = check_round_number_touch(current_price)
+                action = 'CALL' if price >= (rn/10000.0) else 'PUT'
+                last_signaled_symbol = symbol
                 
-                if rn is not None:
-                    rn_float = rn / 10000.0
-                    # التعديل: اتباع اتجاه الاختراق (اختراق للأعلى = صعود، اختراق للأسفل = هبوط)
-                    if current_price >= rn_float:
-                        action = 'CALL'  # اختراق وصعود فوق الرقم الدائري
-                    else:
-                        action = 'PUT'   # هبوط واختراق تحت الرقم الدائري
+                # إرسال الإشارة فوراً
+                send_telegram(f"🚨 *إشارة فورية:* `{symbol}` | *{action}*")
+                entry_price = price
+                
+                # الانتظار حتى نهاية الدقيقة الحالية (حتى تغلق الشمعة)
+                # ننتظر حتى تصبح الثواني 00 والدقيقة التالية
+                while time.localtime().tm_sec != 0:
+                    time.sleep(0.5)
+                time.sleep(1) # ضمان إغلاق الشمعة
+                
+                close_price = get_fastforex_price(symbol) or entry_price
+                
+                # تقييم النتيجة
+                amount = round((account_balance * current_percent) / 100.0, 2)
+                is_win = (action == 'CALL' and close_price > entry_price) or (action == 'PUT' and close_price < entry_price)
+                
+                if is_win:
+                    profit = round(amount * 0.85, 2)
+                    account_balance += profit
+                    session_profit += profit
+                    current_percent = BASE_PERCENT
+                    total_wins += 1
+                    res = "ربح ✅"
                 else:
-                    continue
-
-                selected_signal = {
-                    "symbol": symbol,
-                    "action": action
-                }
-                print(f"[🔥] تم رصد أقوى إشارة في {symbol} للعملية: {action}")
-                break
+                    account_balance -= amount
+                    session_profit -= amount
+                    current_percent *= 2
+                    total_losses += 1
+                    res = "خسارة ❌"
                 
-                time.sleep(1)
-
-            if not selected_signal:
-                time.sleep(5)
-                continue
-
-            symbol = selected_signal["symbol"]
-            action = selected_signal["action"]
-            
-            last_signaled_symbol = symbol
-
-            emoji = "🟢" if action == "CALL" else "🔴"
-            
-            signal_msg = (
-                f"🚨 *إشارة مبكرة (أقوى إشارة)*\n\n"
-                f"📊 الزوج: `{symbol}`\n"
-                f"{emoji} العملية للشمعة القادمة: *{action} (1 دقيقة)*\n"
-                f"💵 مبلغ الصفقة: `{current_percent}%` من الرصيد\n"
-                f"⏳ *الحالة:* البوت يراقب الأسواق ليرسل أقوى إشارة قبل 30 ثانية!"
-            )
-            send_telegram(signal_msg)
-
-            while True:
-                t = time.localtime()
-                if t.tm_sec == 0:
-                    break
-                time.sleep(0.1)
-
-            open_candle_price = get_fastforex_price(symbol) or 0.0
-
-            time.sleep(60)
-
-            close_candle_price = get_fastforex_price(symbol) or open_candle_price
-
-            amount_to_trade = round((account_balance * current_percent) / 100.0, 2)
-            if amount_to_trade < 1.0:
-                amount_to_trade = 1.0
-
-            if action == 'CALL':
-                is_win = close_candle_price > open_candle_price
-            else:  
-                is_win = close_candle_price < open_candle_price
-
-            if is_win:
-                profit = round(amount_to_trade * 0.85, 2)
-                account_balance += profit
-                session_profit += profit
-                current_percent = BASE_PERCENT  
-                total_wins += 1
-                result_txt = f"ربح (+${profit:.2f}) ✅"
-            else:
-                account_balance -= amount_to_trade
-                session_profit -= amount_to_trade
-                current_percent *= 2  
-                total_losses += 1
-                result_txt = f"خسارة (-${amount_to_trade}) ❌"
-
-            result_msg = (
-                f"📌 *نتيجة صفقة 1 دقيقة ({symbol}):*\n\n"
-                f"العملية: *{action}*\n"
-                f"النتيجة: *{result_txt}*\n"
-                f"📈 صفقات رابحة: `{total_wins}` | 📉 صفقات خاسرة: `{total_losses}`\n"
-                f"💰 إجمالي أرباح الجلسة: `${session_profit:.2f}`\n"
-                f"💼 الرصيد الحالي: `${account_balance:.2f}`\n"
-                f"────────────────"
-            )
-            send_telegram(result_msg)
-            
-            time.sleep(5)
-
-        except Exception as err:
-            print(f"Loop Error: {err}")
-            time.sleep(5)
+                send_telegram(f"📌 *النتيجة ({symbol}):* {res}\n💰 الرصيد: `${account_balance:.2f}`")
+                
+            time.sleep(2)
+        except Exception as e:
+            time.sleep(10)
 
 if __name__ == "__main__":
     nori_strategy_loop()
