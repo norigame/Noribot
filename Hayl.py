@@ -44,18 +44,15 @@ def get_fastforex_price(symbol):
         print(f"API Error: {e}")
     return None
 
-def check_round_number_break(prev_price, current_price):
-    # تحديد الرقم الدائري (Round Number) بناءً على آخر رقمين 00
-    # التحقق من تجاوز السعر لرقم منتهي بـ 00 والعودة لمسه أو اختراقه
-    prev_int = int(prev_price * 10000)
-    curr_int = int(current_price * 10000)
-    
-    # البحث عن أقرب رقم دائري منتهي بـ 100 (يعبر عن 00 في المراتب العشرية الكبرى)
-    # فحص الاختراق والرجوع للمس
-    for rn in range(round(prev_int / 100) * 100 - 200, round(prev_int / 100) * 100 + 300, 100):
-        if (prev_int < rn <= curr_int) or (prev_int > rn >= curr_int):
-            return True
-    return False
+def check_round_number_touch(price):
+    # التحقق مما إذا كان السعر الحالي قريب جداً من رقم دائري ينتهي بـ 00 (مثلاً بفارق نقاط معدودات)
+    p_int = int(price * 10000)
+    remainder = p_int % 100
+    # إذا كان السعر على مقربة شديدة من الرقم الدائري (يعتبر ملامسة أو إعادة اختبار)
+    if remainder <= 5 or remainder >= 95:
+        # إرجاع قيمة الرقم الدائري المقرب
+        return round(p_int / 100) * 100
+    return None
 
 def nori_strategy_loop():
     global current_percent, account_balance, session_profit, total_wins, total_losses
@@ -65,7 +62,6 @@ def nori_strategy_loop():
         "📊 البوت يراقب الأسواق ليرسل أقوى إشارة قبل 30 ثانية..."
     )
     
-    last_prices = {}
     last_signaled_symbol = None
     print("--- بدأ البوت في فحص الأسواق (الإشارة قبل 30 ثانية) ---")
 
@@ -87,34 +83,24 @@ def nori_strategy_loop():
                 if symbol == last_signaled_symbol:
                     continue
 
-                price_start = get_fastforex_price(symbol)
-                if not price_start:
+                current_price = get_fastforex_price(symbol)
+                if not current_price:
                     continue
 
-                if symbol not in last_prices:
-                    last_prices[symbol] = price_start
-                    continue
-
-                prev_price = last_prices[symbol]
-                last_prices[symbol] = price_start  
-
-                price_diff = price_start - prev_price
+                # فحص ملامسة الرقم الدائري في الشمعة الحالية بعد إغلاق شمعة الـ 5 دقائق السابقة
+                rn = check_round_number_touch(current_price)
                 
-                # التحقق من اختراق الرقم الدائري (Round Number 00)
-                is_round_broken = check_round_number_break(prev_price, price_start)
-
-                if is_round_broken:
-                    if price_diff > 0:
-                        action = 'CALL'
+                if rn is not None:
+                    # تحديد الاتجاه بناءً على موقع السعر بالنسبة للرقم الدائري عند إعادة اللمس
+                    # إذا لامسه من الأسفل ونزل -> هبوط (PUT) | إذا لامسه من الأعلى وصعد -> صعود (CALL)
+                    rn_float = rn / 10000.0
+                    if current_price >= rn_float:
+                        action = 'PUT'  # ملامسة المقاومة والارتداد هبوطاً
                     else:
-                        action = 'PUT'
+                        action = 'CALL' # ملامسة الدعم والارتداد صعوداً
                 else:
-                    if price_diff > 0.0001:  
-                        action = 'CALL'  
-                    elif price_diff < -0.0001: 
-                        action = 'PUT' 
-                    else:
-                        continue
+                    # في حال لم يكن هناك ملامسة دقيقة لروند نمبر، نتابع الزخم الطبيعي
+                    continue
 
                 selected_signal = {
                     "symbol": symbol,
