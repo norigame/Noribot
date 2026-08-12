@@ -87,10 +87,11 @@ def nori_strategy_loop():
 
                 price_diff = price_start - prev_price
                 
+                # التداول مع الترند العام (صعود للترند الصاعد، وهبوط للترند الهابط)
                 if price_diff > 0.0001:  
-                    action = 'PUT'  
+                    action = 'CALL'  
                 elif price_diff < -0.0001: 
-                    action = 'CALL' 
+                    action = 'PUT' 
                 else:
                     continue
 
