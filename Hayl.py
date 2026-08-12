@@ -44,6 +44,19 @@ def get_fastforex_price(symbol):
         print(f"API Error: {e}")
     return None
 
+def check_round_number_break(prev_price, current_price):
+    # تحديد الرقم الدائري (Round Number) بناءً على آخر رقمين 00
+    # التحقق من تجاوز السعر لرقم منتهي بـ 00 والعودة لمسه أو اختراقه
+    prev_int = int(prev_price * 10000)
+    curr_int = int(current_price * 10000)
+    
+    # البحث عن أقرب رقم دائري منتهي بـ 100 (يعبر عن 00 في المراتب العشرية الكبرى)
+    # فحص الاختراق والرجوع للمس
+    for rn in range(round(prev_int / 100) * 100 - 200, round(prev_int / 100) * 100 + 300, 100):
+        if (prev_int < rn <= curr_int) or (prev_int > rn >= curr_int):
+            return True
+    return False
+
 def nori_strategy_loop():
     global current_percent, account_balance, session_profit, total_wins, total_losses
     
@@ -87,13 +100,21 @@ def nori_strategy_loop():
 
                 price_diff = price_start - prev_price
                 
-                # التداول مع الترند العام (صعود للترند الصاعد، وهبوط للترند الهابط)
-                if price_diff > 0.0001:  
-                    action = 'CALL'  
-                elif price_diff < -0.0001: 
-                    action = 'PUT' 
+                # التحقق من اختراق الرقم الدائري (Round Number 00)
+                is_round_broken = check_round_number_break(prev_price, price_start)
+
+                if is_round_broken:
+                    if price_diff > 0:
+                        action = 'CALL'
+                    else:
+                        action = 'PUT'
                 else:
-                    continue
+                    if price_diff > 0.0001:  
+                        action = 'CALL'  
+                    elif price_diff < -0.0001: 
+                        action = 'PUT' 
+                    else:
+                        continue
 
                 selected_signal = {
                     "symbol": symbol,
