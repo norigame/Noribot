@@ -54,7 +54,7 @@ def nori_strategy_loop():
     
     send_telegram(
         "🚀 *تم تشغيل Nori Signals (فريم 5 دقائق)*\n"
-        "📊 البوت يراقب السوق لإفقار الصفقات على فريم 5 دقائق..."
+        "📊 البوت يراقب السوق لإرسال الصفقات..."
     )
     
     candles_history = {symbol: [] for symbol in SYMBOLS}
@@ -71,19 +71,14 @@ def nori_strategy_loop():
                 if not current_price:
                     continue
 
-                # منع تكرار الإشارة لنفس الزوج إلا بعد مرور 10 دقائق (600 ثانية) لفريم 5 دقائق
+                # منع تكرار الإشارة لنفس الزوج إلا بعد مرور 10 دقائق (600 ثانية)
                 if time.time() - last_signal_time[symbol] < 600:
                     continue
 
                 history = candles_history[symbol]
-                current_time = time.localtime()
-                current_min = current_time.tm_min
-                current_sec = current_time.tm_sec
                 
-                # تتبع إغلاق وفتح شمعات 5 دقائق (تتجدد كل 5 دقائق تماماً)
-                is_new_5m_candle = (current_min % 5 == 0) and (current_sec < 5)
-
-                if not history or is_new_5m_candle:
+                # بناء تاريخ الشمعات بالطريقة الأصلية السلسة
+                if not history or time.localtime().tm_sec == 0:
                     if not history or history[-1].get("closed", True):
                         history.append({"open": current_price, "high": current_price, "low": current_price, "close": current_price, "closed": False})
                     else:
@@ -95,7 +90,7 @@ def nori_strategy_loop():
                         history[-1]["high"] = max(history[-1]["high"], current_price)
                         history[-1]["low"] = min(history[-1]["low"], current_price)
                         history[-1]["close"] = current_price
-                        if current_min % 5 == 4 and current_sec >= 55 and not history[-1].get("closed", False):
+                        if time.localtime().tm_sec >= 58 and not history[-1].get("closed", False):
                             history[-1]["closed"] = True
 
                 if len(history) >= 3:
@@ -119,7 +114,7 @@ def nori_strategy_loop():
                         last_signal_time[symbol] = time.time()
                         break
 
-                time.sleep(2)
+                time.sleep(1)
 
             if not selected_signal:
                 continue
@@ -134,21 +129,16 @@ def nori_strategy_loop():
                 f"{emoji} العملية للشمعة القادمة: *{action} (5 دقائق)*\n"
                 f"✅ (ترند + روند نمبر + تأكيد شمعة)\n"
                 f"💵 مبلغ الصفقة: `{current_percent}%` من الرصيد\n"
-                f"⏳ *الحالة:* بانتظار نتيجة شمعة الـ 5 دقائق..."
+                f"⏳ *الحالة:* بانتظار نتيجة صفقة الـ 5 دقائق..."
             )
             send_telegram(signal_msg)
 
-            # انتظار بداية الشمعة الجديدة تماماً لتسجيل سعر الدقيق بدقة
-            while True:
-                t = time.localtime()
-                if t.tm_min % 5 == 0 and t.tm_sec == 0:
-                    break
-                time.sleep(0.1)
-
+            # تسجيل سعر الدخول فوراً وقت إرسال الإشارة
             open_candle_price = get_fastforex_price(symbol) or 0.0
 
-            # الانتظار لمدة 5 دقائق كاملة (300 ثانية) لمتابعة صفقة الـ 5 دقائق
-            time.sleep(300)
+            # الانتظار لمدة 330 ثانية بالحرف من لحظة إرسال الإشارة
+            time.sleep(330)
+
             close_candle_price = get_fastforex_price(symbol) or open_candle_price
 
             amount_to_trade = round((account_balance * current_percent) / 100.0, 2)
