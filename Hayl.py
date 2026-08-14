@@ -2,7 +2,7 @@ import time
 import requests
 
 # ==========================================
-# تطبيق Nori Signals - صفقة 1 دقيقة (FastForex API)
+# تطبيق Nori Signals - صفقة 5 دقائق (استراتيجية الأسباب الثلاثة)
 # ==========================================
 TELEGRAM_BOT_TOKEN = "8792506572:AAHH3hVOz895ca4W7-HaZ6bms1J_8kiFtXA"
 TELEGRAM_CHAT_ID = "1792638515"
@@ -44,97 +44,111 @@ def get_fastforex_price(symbol):
         print(f"API Error: {e}")
     return None
 
-def check_round_number_touch(price):
-    p_int = int(price * 10000)
-    remainder = p_int % 100
-    if remainder <= 5 or remainder >= 95:
-        return round(p_int / 100) * 100
-    return None
+def is_near_round_number(price):
+    scaled = price * 1000
+    remainder = scaled % 50
+    return remainder < 5 or remainder > 45
 
 def nori_strategy_loop():
     global current_percent, account_balance, session_profit, total_wins, total_losses
     
     send_telegram(
-        "🚀 *تم تشغيل Nori Signals*\n"
-        "📊 البوت يراقب الأسواق ليرسل أقوى إشارة قبل 30 ثانية..."
+        "🚀 *تم تشغيل Nori Signals (فريم 5 دقائق)*\n"
+        "📊 البوت يراقب السوق لإفقار الصفقات على فريم 5 دقائق..."
     )
     
-    last_signaled_symbol = None
-    print("--- بدأ البوت في فحص الأسواق (الإشارة قبل 30 ثانية) ---")
+    candles_history = {symbol: [] for symbol in SYMBOLS}
+    last_signal_time = {symbol: 0 for symbol in SYMBOLS}
+
+    print("--- بدأ البوت العمل على فريم 5 دقائق ---")
 
     while True:
         try:
-            current_time = time.localtime()
-            current_min = current_time.tm_min
-            current_sec = current_time.tm_sec
-
-            is_near_end_of_candle = ((current_min + 1) % 5 == 0) and (30 <= current_sec <= 59)
-
-            if not is_near_end_of_candle:
-                time.sleep(1)
-                continue
-
             selected_signal = None
 
             for symbol in SYMBOLS:
-                if symbol == last_signaled_symbol:
-                    continue
-
                 current_price = get_fastforex_price(symbol)
                 if not current_price:
                     continue
 
-                rn = check_round_number_touch(current_price)
-                
-                if rn is not None:
-                    rn_float = rn / 10000.0
-                    # التعديل: اتباع اتجاه الاختراق (اختراق للأعلى = صعود، اختراق للأسفل = هبوط)
-                    if current_price >= rn_float:
-                        action = 'CALL'  # اختراق وصعود فوق الرقم الدائري
-                    else:
-                        action = 'PUT'   # هبوط واختراق تحت الرقم الدائري
-                else:
+                # منع تكرار الإشارة لنفس الزوج إلا بعد مرور 10 دقائق (600 ثانية) لفريم 5 دقائق
+                if time.time() - last_signal_time[symbol] < 600:
                     continue
 
-                selected_signal = {
-                    "symbol": symbol,
-                    "action": action
-                }
-                print(f"[🔥] تم رصد أقوى إشارة في {symbol} للعملية: {action}")
-                break
+                history = candles_history[symbol]
+                current_time = time.localtime()
+                current_min = current_time.tm_min
+                current_sec = current_time.tm_sec
                 
-                time.sleep(1)
+                # تتبع إغلاق وفتح شمعات 5 دقائق (تتجدد كل 5 دقائق تماماً)
+                is_new_5m_candle = (current_min % 5 == 0) and (current_sec < 5)
+
+                if not history or is_new_5m_candle:
+                    if not history or history[-1].get("closed", True):
+                        history.append({"open": current_price, "high": current_price, "low": current_price, "close": current_price, "closed": False})
+                    else:
+                        history[-1]["high"] = max(history[-1]["high"], current_price)
+                        history[-1]["low"] = min(history[-1]["low"], current_price)
+                        history[-1]["close"] = current_price
+                else:
+                    if history:
+                        history[-1]["high"] = max(history[-1]["high"], current_price)
+                        history[-1]["low"] = min(history[-1]["low"], current_price)
+                        history[-1]["close"] = current_price
+                        if current_min % 5 == 4 and current_sec >= 55 and not history[-1].get("closed", False):
+                            history[-1]["closed"] = True
+
+                if len(history) >= 3:
+                    c_prev = history[-2] 
+                    c_curr = history[-1] 
+
+                    is_uptrend = c_prev['close'] > c_prev['open']
+                    is_downtrend = c_prev['close'] < c_prev['open']
+                    near_rn = is_near_round_number(current_price)
+                    is_green_candle = c_curr['close'] > c_curr['open']
+                    is_red_candle = c_curr['close'] < c_curr['open']
+
+                    action = None
+                    if is_uptrend and near_rn and is_green_candle:
+                        action = 'CALL'
+                    elif is_downtrend and near_rn and is_red_candle:
+                        action = 'PUT'
+
+                    if action:
+                        selected_signal = {"symbol": symbol, "action": action}
+                        last_signal_time[symbol] = time.time()
+                        break
+
+                time.sleep(2)
 
             if not selected_signal:
-                time.sleep(5)
                 continue
 
             symbol = selected_signal["symbol"]
             action = selected_signal["action"]
-            
-            last_signaled_symbol = symbol
-
             emoji = "🟢" if action == "CALL" else "🔴"
             
             signal_msg = (
-                f"🚨 *إشارة مبكرة (أقوى إشارة)*\n\n"
+                f"🚨 *إشارة جديدة (تأكيد الأسباب الثلاثة - 5 دقائق)*\n\n"
                 f"📊 الزوج: `{symbol}`\n"
-                f"{emoji} العملية للشمعة القادمة: *{action} (1 دقيقة)*\n"
+                f"{emoji} العملية للشمعة القادمة: *{action} (5 دقائق)*\n"
+                f"✅ (ترند + روند نمبر + تأكيد شمعة)\n"
                 f"💵 مبلغ الصفقة: `{current_percent}%` من الرصيد\n"
-                f"⏳ *الحالة:* البوت يراقب الأسواق ليرسل أقوى إشارة قبل 30 ثانية!"
+                f"⏳ *الحالة:* بانتظار نتيجة شمعة الـ 5 دقائق..."
             )
             send_telegram(signal_msg)
 
+            # انتظار بداية الشمعة الجديدة تماماً لتسجيل سعر الدقيق بدقة
             while True:
                 t = time.localtime()
-                if t.tm_sec == 0:
+                if t.tm_min % 5 == 0 and t.tm_sec == 0:
                     break
                 time.sleep(0.1)
 
             open_candle_price = get_fastforex_price(symbol) or 0.0
 
-            time.sleep(60)
-
+            # الانتظار لمدة 5 دقائق كاملة (300 ثانية) لمتابعة صفقة الـ 5 دقائق
+            time.sleep(300)
             close_candle_price = get_fastforex_price(symbol) or open_candle_price
 
             amount_to_trade = round((account_balance * current_percent) / 100.0, 2)
@@ -161,7 +175,7 @@ def nori_strategy_loop():
                 result_txt = f"خسارة (-${amount_to_trade}) ❌"
 
             result_msg = (
-                f"📌 *نتيجة صفقة 1 دقيقة ({symbol}):*\n\n"
+                f"📌 *نتيجة صفقة 5 دقائق ({symbol}):*\n\n"
                 f"العملية: *{action}*\n"
                 f"النتيجة: *{result_txt}*\n"
                 f"📈 صفقات رابحة: `{total_wins}` | 📉 صفقات خاسرة: `{total_losses}`\n"
